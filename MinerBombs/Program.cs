@@ -19,23 +19,41 @@ using VRageMath;
 
 namespace IngameScript {
 	partial class Program : MyGridProgram {
+		// MinerBombs v1.0_b1 (pistons)
 
 		// Скорость сварки боеголовки
-		int speed = 30;
+		int speed = 10;
 		// Скорость поршня
-		int speedPiston = 3;
-		
+		float speedPiston = 5.0f;
+
 
 		//Projector		//Welder		//Merge Block		//Warhead
 		IMyProjector myProjector;
 		List<IMyShipWelder> LmyWelders;
 		List<IMyShipMergeBlock> LmyMergeBlocks;
 		List<IMyWarhead> LmyWarhead;
-		//List<IMyPistonBase> LmyPistonBases;
-		
+		List<IMyPistonBase> LmyPistonBase;
 
-		bool on;
-		int time;
+
+		//// Переменные
+		bool on = false;            // включен
+		int ticks = 0;          // тики
+		string debug = "";
+		// PistonStatus pistonStatus;
+		bool pistonsExtended = false;
+		bool pistonsRetracted = false;
+		bool pistonsStoped = false;
+		// Projector
+		int remainingBlocks = 0;
+		int totalBlocks = 0;
+		// MergeBlocks
+		bool enabledMergeBlock = false;
+		int countMergeBlocks;
+
+		bool started = false;
+		int gluck = 0;
+		int regluck = 0;
+
 
 		public Program() {
 			myProjector = GridTerminalSystem.GetBlockWithName("Projector") as IMyProjector;
@@ -43,14 +61,14 @@ namespace IngameScript {
 			LmyWelders = new List<IMyShipWelder>();
 			LmyMergeBlocks = new List<IMyShipMergeBlock>();
 			LmyWarhead = new List<IMyWarhead>();
-			//LmyPistonBases = new List<IMyPistonBase>();
+			LmyPistonBase = new List<IMyPistonBase>();
 
 			Runtime.UpdateFrequency = UpdateFrequency.Update10;
 
-			on = false;
-			time = 0;
-
-			//Main("Start", UpdateType.None);	// Автопуск
+			//on = false;
+			//ticks = 0;
+			//regluck = 0;
+			Main("Stop", UpdateType.Script);    // Автопуск
 		}
 
 		public void Save() {
@@ -58,83 +76,213 @@ namespace IngameScript {
 		}
 
 		public void Main(string argument, UpdateType updateSource) {
+
+			// Выполнение скрипта по таймеру
 			if (updateSource == UpdateType.Update10) {
 
-				Echo("Проектор включен? - " + myProjector.IsProjecting.ToString());
-				Echo("Скорость пуска: " + speed.ToString());
+				// Останов, если отключена проекция
 				if (!myProjector.IsProjecting) {
 					on = false;
 				}
 
+				// Выполнение
 				if (on == true) {
-					Echo("Блоков осталось: " + myProjector.RemainingBlocks.ToString());
-					Echo("Тик: " + time.ToString());
-					//if (time==10 && projector.RemainingBlocks==0) {
-					if (time==5) {
-						GridTerminalSystem.GetBlocksOfType<IMyWarhead>(LmyWarhead, block => block.IsSameConstructAs(Me));
-						Echo("Боеголовка ... ("+ LmyWarhead.Count + ")");
-						if (LmyWarhead.Count > 0) {
+					//debug = "";
+					remainingBlocks = myProjector.RemainingBlocks;
+					totalBlocks = myProjector.TotalBlocks;
+					countMergeBlocks = LmyMergeBlocks.Count;
+
+					//debug += "Всего соединителей: " + countMergeBlocks.ToString() + "\n";
+
+
+					GridTerminalSystem.GetBlocksOfType<IMyPistonBase>(LmyPistonBase, block => block.IsSameConstructAs(Me));
+					GridTerminalSystem.GetBlocksOfType<IMyShipMergeBlock>(LmyMergeBlocks, block => block.IsSameConstructAs(Me));
+					GridTerminalSystem.GetBlocksOfType<IMyShipWelder>(LmyWelders, block => block.IsSameConstructAs(Me));
+					GridTerminalSystem.GetBlocksOfType<IMyWarhead>(LmyWarhead, block => block.IsSameConstructAs(Me));
+
+
+					// IMyPistonBase
+					foreach (IMyPistonBase myPiston in LmyPistonBase) {
+						switch (myPiston.Status) {
+							case PistonStatus.Extended:
+								pistonsExtended = true;
+								pistonsRetracted = false;
+								pistonsStoped = false;
+								break;
+							case PistonStatus.Retracted:
+								pistonsExtended = false;
+								pistonsRetracted = true;
+								pistonsStoped = false;
+								break;
+							case PistonStatus.Stopped:
+								pistonsExtended = false;
+								pistonsRetracted = false;
+								pistonsStoped = true;
+								break;
+							case PistonStatus.Extending:
+								pistonsExtended = false;
+								pistonsRetracted = false;
+								pistonsStoped = false;
+								break;
+							case PistonStatus.Retracting:
+								pistonsExtended = false;
+								pistonsRetracted = false;
+								pistonsStoped = false;
+								break;
+						}
+					}
+
+					// Отсоединение
+					if (remainingBlocks == 0) {
+						if (ticks >= speed) {
+							debug += "Соединитель ...\n";
+							foreach (IMyShipMergeBlock mergeBlock in LmyMergeBlocks) {
+								if (mergeBlock.IsFunctional) {
+									mergeBlock.Enabled = false;
+								}
+								enabledMergeBlock = false;
+								debug += "  отключили\n";
+							}
+							debug += "Боеголовка ...\n";
 							foreach (IMyWarhead warhead in LmyWarhead) {
 								if (warhead.IsFunctional && warhead.IsArmed == false) {
 									warhead.IsArmed = true;
-									Echo("\t взведена!");
+									debug += "  взведена!\n";
 								}
 							}
+							started = true;
+							if (speed < ticks) speed = ticks;
+							ticks = 0;
+							debug = "";
+						}
+					} else {
 
-							GridTerminalSystem.GetBlocksOfType<IMyShipMergeBlock>(LmyMergeBlocks, block => block.IsSameConstructAs(Me));
-							foreach (IMyShipMergeBlock mergeBlock in LmyMergeBlocks) {
-								Echo("Блок соединён? - " + mergeBlock.IsConnected);
-								if (mergeBlock.IsConnected) {
-									mergeBlock.Enabled = false;
-									Echo("Пуск боеголовки!");
-								}
-							}
-
-						} else {
-							Echo("\t не готова!");
+						// Антиглюк код
+						if (ticks > 60) {
+							gluck += 1;
 							Main("Stop", UpdateType.None);
-							Main("Start", UpdateType.None);
+							return;
 						}
 
-					}
-					//if (time==30 && projector.RemainingBlocks != 0) {
-					if (time==speed) {
-						GridTerminalSystem.GetBlocksOfType<IMyShipMergeBlock>(LmyMergeBlocks, block => block.IsSameConstructAs(Me));
-						foreach (IMyShipMergeBlock mergeBlock in LmyMergeBlocks) {
-							if (mergeBlock.IsFunctional) {
-								mergeBlock.Enabled = true;
-								Echo("Соединитель включён!");
+						// Выдвигание/втягивание поршней
+						//if ((enabledMergeBlock && (pistonsRetracted && !pistonsStoped)) || started) {
+						if (started) {
+							started = false;
+							debug += "Останавливаем сварку\n";
+							foreach (IMyShipWelder welder in LmyWelders) {
+								if (welder.IsFunctional) {
+									welder.Enabled = false;
+								}
 							}
-						}
-					}
-					if (time > speed) time = 0;
-					time += 1;
-				}
-			} else {
-				switch (argument) {
-					case "Start":
-						if (myProjector.IsProjecting) {
-							Echo("Запускаем сварку");
-							GridTerminalSystem.GetBlocksOfType<IMyShipWelder>(LmyWelders, block => block.IsSameConstructAs(Me));
+							debug += "Выдвигание поршней\n";
+							foreach (IMyPistonBase myPiston in LmyPistonBase) {
+								if (speedPiston > myPiston.MaxVelocity) speedPiston = myPiston.MaxVelocity;
+								myPiston.Velocity = speedPiston;
+								myPiston.Extend();
+							}
+						} else if (enabledMergeBlock && (pistonsExtended && !pistonsStoped)) {
+							debug += "Запускаем сварку\n";
 							foreach (IMyShipWelder welder in LmyWelders) {
 								if (welder.IsFunctional) {
 									welder.Enabled = true;
 								}
 							}
-							Echo("Включаем соединитель");
-							GridTerminalSystem.GetBlocksOfType<IMyShipMergeBlock>(LmyMergeBlocks, block => block.IsSameConstructAs(Me));
-							if (LmyMergeBlocks.Count > 0) {
-								foreach (IMyShipMergeBlock mergeBlock in LmyMergeBlocks) {
+							debug += "Втягивание поршней\n";
+							foreach (IMyPistonBase myPiston in LmyPistonBase) {
+								if (speedPiston > myPiston.MaxVelocity) speedPiston = myPiston.MaxVelocity;
+								myPiston.Velocity = speedPiston;
+								myPiston.Retract();
+							}
+						}
+
+						// Включение соединителя
+						if ((!pistonsExtended || !pistonsRetracted) && !enabledMergeBlock) {
+							foreach (IMyShipMergeBlock mergeBlock in LmyMergeBlocks) {
+								if (mergeBlock.IsFunctional) {
 									mergeBlock.Enabled = true;
 								}
+								enabledMergeBlock = true;
+								debug += "включили соединитель/и\n";
 							}
-							on = true;
+						}
+
+					}
+
+
+
+					// Вывод сообщений в программном блоке
+					Echo("Глюков: " + regluck.ToString());
+					Echo("Тик: " + ticks.ToString());
+					Echo("Скорость пуска: " + speed.ToString());
+					Echo("Скорость поршня: " + speedPiston.ToString());
+					Echo("Проектор включен? - " + myProjector.IsProjecting.ToString());
+					Echo("  блоков осталось: " + remainingBlocks.ToString());
+					Echo("Всего соединителей: " + countMergeBlocks.ToString());
+					Echo("  соединитель включён? " + enabledMergeBlock.ToString());
+					if (pistonsExtended) {
+						Echo("Поршень выдвинут");
+					} else if (pistonsRetracted) {
+						Echo("Поршень втянут");
+					} else if (pistonsStoped) {
+						Echo("Поршень остановлен");
+					} else {
+						Echo("Поршень в движении");
+					}
+					Echo("Запущен? " + started.ToString());
+
+					if (debug.Length > 1000) debug = debug.Substring(0, 999);
+					Echo("DEBUG:\n" + debug);
+
+					ticks += 1;
+
+				} else {
+
+
+				}
+
+
+
+
+
+
+
+			} else {
+
+				// Обработка запуска скрипта с параметром
+				switch (argument) {
+					case "Start":
+						if (gluck > 0 && (ticks > 80)) {
+							Echo("Повторный запуск после глюка");
 						} else {
-							Echo("Проектор выключен!");
+
+							if (myProjector.IsProjecting) {
+								Echo("Запускаем сварку");
+								GridTerminalSystem.GetBlocksOfType<IMyShipWelder>(LmyWelders, block => block.IsSameConstructAs(Me));
+								foreach (IMyShipWelder welder in LmyWelders) {
+									if (welder.IsFunctional) {
+										welder.Enabled = true;
+									}
+								}
+								Echo("Включаем соединитель");
+								GridTerminalSystem.GetBlocksOfType<IMyShipMergeBlock>(LmyMergeBlocks, block => block.IsSameConstructAs(Me));
+								if (LmyMergeBlocks.Count > 0) {
+									foreach (IMyShipMergeBlock mergeBlock in LmyMergeBlocks) {
+										mergeBlock.Enabled = true;
+									}
+									enabledMergeBlock = true;
+								}
+								on = true;
+								debug = "";
+								started = true;
+								ticks = 0;
+							} else {
+								Echo("Проектор выключен!");
+							}
 						}
 						break;
 
 					case "Stop":
+						on = false;
 						Echo("Останавливаем сварку");
 						GridTerminalSystem.GetBlocksOfType<IMyShipWelder>(LmyWelders, block => block.IsSameConstructAs(Me));
 						foreach (IMyShipWelder welder in LmyWelders) {
@@ -149,7 +297,16 @@ namespace IngameScript {
 								mergeBlock.Enabled = false;
 							}
 						}
-						on = false;
+						Echo("Втягиваем поршни");
+						GridTerminalSystem.GetBlocksOfType<IMyPistonBase>(LmyPistonBase, block => block.IsSameConstructAs(Me));
+						foreach (IMyPistonBase myPiston in LmyPistonBase) {
+							myPiston.Velocity = myPiston.MaxVelocity;
+							myPiston.Retract();
+						}
+						if (gluck > 0) {
+							ticks = 0;
+							Main("Start", UpdateType.Script);
+						}
 						break;
 
 					case "Speed+":
@@ -159,7 +316,12 @@ namespace IngameScript {
 
 					case "Speed-":
 						speed += 1;
-						if (speed > 50) speed = 50;
+						if (speed > 300) speed = 300;
+						break;
+
+					case "Restart":
+
+
 						break;
 
 					default:
